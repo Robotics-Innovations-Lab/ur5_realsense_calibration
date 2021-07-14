@@ -3,6 +3,8 @@ project(aruco_ros)
 
 find_package(OpenCV REQUIRED)
 
+add_compile_options(-std=c++11)
+
 find_package(catkin REQUIRED COMPONENTS
   cv_bridge
   dynamic_reconfigure
