@@ -1,17 +1,16 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.0.2)
 project(rqt_easy_handeye)
 
-find_package(catkin REQUIRED )
+find_package(catkin REQUIRED)
 
 catkin_python_setup()
 
-catkin_package( )
+catkin_package()
 
-install(PROGRAMS
+catkin_install_python(PROGRAMS
+    scripts/rqt_calibration_evaluator
     scripts/rqt_calibrationmovements
     scripts/${PROJECT_NAME}
-    src/${PROJECT_NAME}/rqt_calibrationmovements.py
-    src/${PROJECT_NAME}/${PROJECT_NAME}.py
     DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

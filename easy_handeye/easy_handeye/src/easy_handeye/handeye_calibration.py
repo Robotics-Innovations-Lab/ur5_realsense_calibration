@@ -1,7 +1,82 @@
 import os
 import yaml
-import rospy
+
 from geometry_msgs.msg import Vector3, Quaternion, Transform, TransformStamped
+
+
+# TODO: make this a data class in python3
+class HandeyeCalibrationParameters(object):
+    def __init__(self, namespace, move_group_namespace='/', move_group='manipulator', eye_on_hand=None,
+                 robot_base_frame=None, robot_effector_frame=None,
+                 tracking_base_frame=None,
+                 tracking_marker_frame=None,
+                 freehand_robot_movement=None):
+        """
+        Creates a HandeyeCalibrationParameters object.
+
+        :param namespace: the namespace of the calibration (will determine the filename)
+        :type namespace: string
+        :param move_group: the MoveIt group name (e.g. "manipulator")
+        :type move_group: string
+        :param eye_on_hand: if false, it is a eye-on-base calibration
+        :type eye_on_hand: bool
+        :param robot_base_frame: needed only for eye-on-base calibrations: robot base link tf name
+        :type robot_base_frame: string
+        :param robot_effector_frame: needed only for eye-on-hand calibrations: robot tool tf name
+        :type robot_effector_frame: string
+        :param tracking_base_frame: tracking system tf name
+        :type tracking_base_frame: string
+        """
+        self.namespace = namespace
+        self.move_group_namespace = move_group_namespace
+        self.move_group = move_group
+        self.eye_on_hand = eye_on_hand
+        self.robot_base_frame = robot_base_frame
+        self.robot_effector_frame = robot_effector_frame
+        self.tracking_base_frame = tracking_base_frame
+        self.tracking_marker_frame = tracking_marker_frame
+        self.freehand_robot_movement = freehand_robot_movement
+
+    @staticmethod
+    def init_from_parameter_server(namespace):
+        import rospy
+        rospy.loginfo("Loading parameters for calibration {} from the parameters server".format(namespace))
+
+        if not namespace.endswith('/'):
+            namespace = namespace + '/'
+
+        ret = HandeyeCalibrationParameters(namespace=namespace,
+                                           move_group_namespace=rospy.get_param(namespace + 'move_group_namespace'),
+                                           move_group=rospy.get_param(namespace + 'move_group'),
+                                           eye_on_hand=rospy.get_param(namespace + 'eye_on_hand'),
+                                           robot_effector_frame=rospy.get_param(namespace + 'robot_effector_frame'),
+                                           robot_base_frame=rospy.get_param(namespace + 'robot_base_frame'),
+                                           tracking_base_frame=rospy.get_param(namespace + 'tracking_base_frame'),
+                                           tracking_marker_frame=rospy.get_param(namespace + 'tracking_marker_frame'),
+                                           freehand_robot_movement=rospy.get_param(namespace + 'freehand_robot_movement'))
+        return ret
+
+    @staticmethod
+    def store_to_parameter_server(parameters):
+        import rospy
+        namespace = parameters.namespace
+        rospy.loginfo("Storing parameters for calibration {} into the parameters server".format(namespace))
+
+        rospy.set_param(namespace + 'move_group_namespace', parameters.move_group_namespace)
+        rospy.set_param(namespace + 'move_group', parameters.move_group)
+        rospy.set_param(namespace + 'eye_on_hand', parameters.eye_on_hand)
+        rospy.set_param(namespace + 'robot_effector_frame', parameters.robot_effector_frame)
+        rospy.set_param(namespace + 'robot_base_frame', parameters.robot_base_frame)
+        rospy.set_param(namespace + 'tracking_base_frame', parameters.tracking_base_frame)
+        rospy.set_param(namespace + 'tracking_marker_frame', parameters.tracking_marker_frame)
+
+    @staticmethod
+    def from_dict(in_dict):
+        return HandeyeCalibrationParameters(**in_dict)
+
+    @staticmethod
+    def to_dict(parameters):
+        return vars(parameters)
 
 
 class HandeyeCalibration(object):
@@ -13,38 +88,21 @@ class HandeyeCalibration(object):
 
     # TODO: use the HandeyeCalibration message instead, this should be HandeyeCalibrationConversions
     def __init__(self,
-                 eye_on_hand=False,
-                 robot_base_frame=None,
-                 robot_effector_frame=None,
-                 tracking_base_frame=None,
+                 calibration_parameters=None,
                  transformation=None):
         """
         Creates a HandeyeCalibration object.
 
-        :param eye_on_hand: if false, it is a eye-on-base calibration
-        :type eye_on_hand: bool
-        :param robot_base_frame: needed only for eye-on-base calibrations: robot base link tf name
-        :type robot_base_frame: string
-        :param robot_effector_frame: needed only for eye-on-hand calibrations: robot tool tf name
-        :type robot_effector_frame: string
-        :param tracking_base_frame: tracking system tf name
-        :type tracking_base_frame: string
         :param transformation: transformation between optical origin and base/tool robot frame as tf tuple
         :type transformation: ((float, float, float), (float, float, float, float))
         :return: a HandeyeCalibration object
 
         :rtype: easy_handeye.handeye_calibration.HandeyeCalibration
         """
+        self.parameters = calibration_parameters
 
         if transformation is None:
             transformation = ((0, 0, 0), (0, 0, 0, 1))
-
-        self.eye_on_hand = eye_on_hand
-        """
-        if false, it is a eye-on-base calibration
-
-        :type: bool
-        """
 
         self.transformation = TransformStamped(transform=Transform(
             Vector3(*transformation[0]), Quaternion(*transformation[1])))
@@ -55,15 +113,14 @@ class HandeyeCalibration(object):
         """
 
         # tf names
-        if self.eye_on_hand:
-            self.transformation.header.frame_id = robot_effector_frame
+        if self.parameters.eye_on_hand:
+            self.transformation.header.frame_id = calibration_parameters.robot_effector_frame
         else:
-            self.transformation.header.frame_id = robot_base_frame
-        self.transformation.child_frame_id = tracking_base_frame
+            self.transformation.header.frame_id = calibration_parameters.robot_base_frame
+        self.transformation.child_frame_id = calibration_parameters.tracking_base_frame
 
-        self.filename = HandeyeCalibration.DIRECTORY + '/' + rospy.get_namespace().rstrip('/').split('/')[-1] + '.yaml'
-
-    def to_dict(self):
+    @staticmethod
+    def to_dict(calibration):
         """
         Returns a dictionary representing this calibration.
 
@@ -72,26 +129,22 @@ class HandeyeCalibration(object):
         :rtype: dict[string, string|dict[string,float]]
         """
         ret = {
-            'eye_on_hand': self.eye_on_hand,
-            'tracking_base_frame': self.transformation.child_frame_id,
+            'parameters': HandeyeCalibrationParameters.to_dict(calibration.parameters),
             'transformation': {
-                'x': self.transformation.transform.translation.x,
-                'y': self.transformation.transform.translation.y,
-                'z': self.transformation.transform.translation.z,
-                'qx': self.transformation.transform.rotation.x,
-                'qy': self.transformation.transform.rotation.y,
-                'qz': self.transformation.transform.rotation.z,
-                'qw': self.transformation.transform.rotation.w
+                'x': calibration.transformation.transform.translation.x,
+                'y': calibration.transformation.transform.translation.y,
+                'z': calibration.transformation.transform.translation.z,
+                'qx': calibration.transformation.transform.rotation.x,
+                'qy': calibration.transformation.transform.rotation.y,
+                'qz': calibration.transformation.transform.rotation.z,
+                'qw': calibration.transformation.transform.rotation.w
             }
         }
-        if self.eye_on_hand:
-            ret['robot_effector_frame'] = self.transformation.header.frame_id
-        else:
-            ret['robot_base_frame'] = self.transformation.header.frame_id
 
         return ret
 
-    def from_dict(self, in_dict):
+    @staticmethod
+    def from_dict(in_dict):
         """
         Sets values parsed from a given dictionary.
 
@@ -100,25 +153,13 @@ class HandeyeCalibration(object):
 
         :rtype: None
         """
-        self.eye_on_hand = in_dict['eye_on_hand']
-        self.transformation = TransformStamped(
-            child_frame_id=in_dict['tracking_base_frame'],
-            transform=Transform(
-                Vector3(in_dict['transformation']['x'],
-                        in_dict['transformation']['y'],
-                        in_dict['transformation']['z']),
-                Quaternion(in_dict['transformation']['qx'],
-                           in_dict['transformation']['qy'],
-                           in_dict['transformation']['qz'],
-                           in_dict['transformation']['qw'])
-            )
-        )
-        if self.eye_on_hand:
-            self.transformation.header.frame_id = in_dict['robot_effector_frame']
-        else:
-            self.transformation.header.frame_id = in_dict['robot_base_frame']
+        tr = in_dict['transformation']
+        ret = HandeyeCalibration(calibration_parameters=HandeyeCalibrationParameters.from_dict(in_dict['parameters']),
+                                 transformation=((tr['x'], tr['y'], tr['z']), (tr['qx'], tr['qy'], tr['qz'], tr['qw'])))
+        return ret
 
-    def to_yaml(self):
+    @staticmethod
+    def to_yaml(calibration):
         """
         Returns a yaml string representing this calibration.
 
@@ -126,18 +167,67 @@ class HandeyeCalibration(object):
 
         :rtype: string
         """
-        return yaml.dump(self.to_dict())
+        return yaml.dump(HandeyeCalibration.to_dict(calibration), default_flow_style=False)
 
-    def from_yaml(self, in_yaml):
+    @staticmethod
+    def from_yaml(in_yaml):
         """
         Parses a yaml string and sets the contained values in this calibration.
 
         :param in_yaml: a yaml string
         :rtype: None
         """
-        self.from_dict(yaml.load(in_yaml))
+        return HandeyeCalibration.from_dict(yaml.load(in_yaml))
 
-    def to_file(self):
+    @staticmethod
+    def init_from_parameter_server(namespace):
+        import rospy
+        rospy.loginfo("Loading calibration {} from the parameters server".format(namespace))
+
+        params = HandeyeCalibrationParameters.init_from_parameter_server(namespace)
+
+        ret = HandeyeCalibration(calibration_parameters=params,
+                                 transformation=((
+                                                     rospy.get_param(namespace + 'transformation/x'),
+                                                     rospy.get_param(namespace + 'transformation/y'),
+                                                     rospy.get_param(namespace + 'transformation/z'),
+                                                 ), (
+
+                                                     rospy.get_param(namespace + 'transformation/qx'),
+                                                     rospy.get_param(namespace + 'transformation/qy'),
+                                                     rospy.get_param(namespace + 'transformation/qz'),
+                                                     rospy.get_param(namespace + 'transformation/qw'),
+                                                 )))
+        return ret
+
+    @staticmethod
+    def store_to_parameter_server(calibration):
+        import rospy
+        namespace = calibration.parameters.namespace
+        t = calibration.transformation.transform
+        
+        rospy.loginfo("Storing calibration {} into the parameters server".format(namespace))
+
+        HandeyeCalibrationParameters.store_to_parameter_server(calibration.parameters)
+
+        rospy.set_param(namespace + 'transformation/x', t.translation.x)
+        rospy.set_param(namespace + 'transformation/y', t.translation.y)
+        rospy.set_param(namespace + 'transformation/z', t.translation.z)
+
+        rospy.set_param(namespace + 'transformation/qx', t.rotation.x)
+        rospy.set_param(namespace + 'transformation/qy', t.rotation.y)
+        rospy.set_param(namespace + 'transformation/qz', t.rotation.z)
+        rospy.set_param(namespace + 'transformation/qw', t.rotation.w)
+
+    def filename(self):
+        return HandeyeCalibration.filename_for_namespace(self.parameters.namespace)
+
+    @staticmethod
+    def filename_for_namespace(namespace):
+        return HandeyeCalibration.DIRECTORY + '/' + namespace.rstrip('/').split('/')[-1] + '.yaml'
+
+    @staticmethod
+    def to_file(calibration):
         """
         Saves this calibration in a yaml file in the default path.
 
@@ -148,10 +238,11 @@ class HandeyeCalibration(object):
         if not os.path.exists(HandeyeCalibration.DIRECTORY):
             os.makedirs(HandeyeCalibration.DIRECTORY)
 
-        with open(self.filename, 'w') as calib_file:
-            calib_file.write(self.to_yaml())
+        with open(calibration.filename(), 'w') as calib_file:
+            calib_file.write(HandeyeCalibration.to_yaml(calibration))
 
-    def from_file(self):
+    @staticmethod
+    def from_file(namespace):
         """
         Parses a yaml file in the default path and sets the contained values in this calibration.
 
@@ -160,52 +251,16 @@ class HandeyeCalibration(object):
         :rtype: None
         """
 
-        with open(self.filename) as calib_file:
-            self.from_yaml(calib_file.read())
+        with open(HandeyeCalibration.filename_for_namespace(namespace)) as calib_file:
+            return HandeyeCalibration.from_yaml(calib_file.read())
 
-    def from_parameters(self):
+    @staticmethod
+    def from_filename(filename):
         """
-        Stores this calibration as ROS parameters in the namespace of the current node.
+        Parses a yaml file at the specified location.
 
         :rtype: None
         """
-        calib_dict = {}
 
-        root_params = ['eye_on_hand', 'tracking_base_frame']
-        for rp in root_params:
-            calib_dict[rp] = rospy.get_param(rp)
-
-        if calib_dict['eye_on_hand']:
-            calib_dict['robot_effector_frame'] = rospy.get_param('robot_effector_frame')
-        else:
-            calib_dict['robot_base_frame'] = rospy.get_param('robot_base_frame')
-
-        transf_params = 'x', 'y', 'z', 'qx', 'qy', 'qz', 'qw'
-        calib_dict['transformation'] = {}
-        for tp in transf_params:
-            calib_dict['transformation'][tp] = rospy.get_param('transformation/'+tp)
-
-        self.from_dict(calib_dict)
-
-    def to_parameters(self):
-        """
-        Fetches a calibration from ROS parameters in the namespace of the current node into this object.
-
-        :rtype: None
-        """
-        calib_dict = self.to_dict()
-
-        root_params = ['eye_on_hand', 'tracking_base_frame']
-        if calib_dict['eye_on_hand']:
-            root_params.append('robot_effector_frame')
-        else:
-            root_params.append('robot_base_frame')
-
-        for rp in root_params:
-            rospy.set_param(rp, calib_dict[rp])
-
-        transf_params = 'x', 'y', 'z', 'qx', 'qy', 'qz', 'qw'
-
-        for tp in transf_params:
-            rospy.set_param('transformation/'+tp, calib_dict['transformation'][tp])
-
+        with open(filename) as calib_file:
+            return HandeyeCalibration.from_yaml(calib_file.read())
