@@ -3,8 +3,6 @@ project(aruco_ros)
 
 find_package(OpenCV REQUIRED)
 
-add_compile_options(-std=c++11)
-
 find_package(catkin REQUIRED COMPONENTS
   cv_bridge
   dynamic_reconfigure
@@ -23,6 +21,8 @@ generate_dynamic_reconfigure_options(
   cfg/ArucoThreshold.cfg
 )
 
+add_compile_options(-std=c++11)
+
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES aruco_ros_utils
@@ -30,7 +30,9 @@ catkin_package(
 )
 
 include_directories(
-  include
+  include)
+include_directories(
+  SYSTEM
   ${catkin_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
 )
@@ -49,7 +51,7 @@ target_link_libraries(double ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
 
 add_executable(marker_publisher src/marker_publish.cpp
                                 src/aruco_ros_utils.cpp)
-add_dependencies(marker_publisher ${PROJECT_NAME}_gencfg ${catkin_EXPORTED_TARGETS})
+add_dependencies(marker_publisher ${PROJECT_NAME}_gencfg)
 target_link_libraries(marker_publisher ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
 
 #############
