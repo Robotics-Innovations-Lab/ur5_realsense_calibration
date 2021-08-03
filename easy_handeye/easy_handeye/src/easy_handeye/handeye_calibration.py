@@ -177,7 +177,7 @@ class HandeyeCalibration(object):
         :param in_yaml: a yaml string
         :rtype: None
         """
-        return HandeyeCalibration.from_dict(yaml.load(in_yaml))
+        return HandeyeCalibration.from_dict(yaml.load(in_yaml, yaml.FullLoader))
 
     @staticmethod
     def init_from_parameter_server(namespace):
